@@ -22,6 +22,10 @@ from weather_fetch import (
     LOCATIONS,
 )
 
+# New: a small sanitization/fallback layer for thermal values so downstream
+# UTCI/pythermalcomfort calls don't get unphysical inputs and return None.
+from thermal import sanitize_weather_thermal
+
 
 # -----------------------------
 # This runs once when the server starts, and once when it shuts down.
@@ -78,10 +82,13 @@ def current_risk(city: str):
             detail=f"No data for '{city}'. Available: {list(LOCATIONS.keys())}",
         )
     weather = weather_cache[city]
-    wbgt = compute_wbgt_simplified(weather["temp_c"], weather["rh_percent"])
+    # sanitize a copy before computing thermal indices so we never pass
+    # grossly-unphysical values downstream (which was causing UTCI -> null).
+    sanitized = sanitize_weather_thermal(weather.copy())
+    wbgt = compute_wbgt_simplified(sanitized["temp_c"], sanitized["rh_percent"])
     return {
         "city": city,
-        "weather": weather,
+        "weather": sanitized,
         "wbgt": wbgt,
         "risk_tier": classify_risk(wbgt),
     }
@@ -91,9 +98,10 @@ def current_risk(city: str):
 def all_risk():
     results = {}
     for city, weather in weather_cache.items():
-        wbgt = compute_wbgt_simplified(weather["temp_c"], weather["rh_percent"])
+        sanitized = sanitize_weather_thermal(weather.copy())
+        wbgt = compute_wbgt_simplified(sanitized["temp_c"], sanitized["rh_percent"])
         results[city] = {
-            "weather": weather,
+            "weather": sanitized,
             "wbgt": wbgt,
             "risk_tier": classify_risk(wbgt),
         }
